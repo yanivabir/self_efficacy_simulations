@@ -4,25 +4,64 @@
 using Markdown
 using InteractiveUtils
 
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+end
+
 # ╔═╡ d54ec906-892f-41fa-9bfa-9f46a9eac789
 begin
-	using CairoMakie
+	using StatsFuns
 	using Printf
+	using CairoMakie
 	set_theme!(theme_minimal())
+	using PlutoUI
 end
 
 # ╔═╡ a1ec218e-52d7-11ee-3475-a58dab3dbd3c
-# Performance function - depends on cognitive resource comitted, and two free parameters
-perf(x, Pmax, Kp) = Pmax .* x ./ (Kp .+ x)
+begin
+	# Performance function - depends on cognitive resource comitted, and two free parameters
+	perf(x, Pmax, Kp) = Pmax .* x ./ (Kp .+ x)
+	
+	function EV(x, incentive, Kc , Ki , Kp, Pmax; condition = "proportional")
+		# This function returns expected value for a given effort, incentive and parameters.
+
+		# Cost is quadratic, comes from motor control theory
+		exp_cost = x .^ 2
+
+		# Expected outcome by condition
+		exp_outcome = condition == "proportional" ? perf(x, Pmax, Kp) : 
+			logistic.(perf(x, Pmax, Kp))
+
+		# Expected reward is dependent on incentive, with an incentive sensitivity parameter modulating it. It is mutliplied by outcome. Reward is assumed to be positive even when incentive is negligible.
+		exp_reward = (1 .+ Ki .* incentive) .* exp_outcome
+
+		# Subtractive cost discounting to allow for negative EV
+		return exp_reward .- Kc .* exp_cost
+	end
+end
+
+# ╔═╡ 26319531-19f6-4b29-b452-04208145f5af
+# Common parameters
+begin
+	# Arbitrarity set range of x to 0-1, but we treat it merely as a non-negative quantity
+	x = 0:0.01:1
+end
+
+# ╔═╡ dd84c870-69fd-4f50-962d-3edc698e0146
+md"## Effect of Pmax and Kp on perf(x)"
 
 # ╔═╡ a4c5300d-93b8-47f5-a84a-fcb086f2d91c
+# Plot perf(x)
 begin
 	perf_xlabel = "Cognitive resource - x"
 	perf_ylabel = "Performance - Perf(x)"
 	
-	# Arbitrarity set range of x to 0-1, but we treat it merely as a non-negative quantity
-	x = 0:0.01:1
-
 	# Pmax governs the asymptote of the function
 	Pmaxs = range(0.01, 0.5, length=5)
 	ys_Pmax = [perf(x, Pmax, 0.5) for Pmax in Pmaxs]
@@ -60,17 +99,189 @@ begin
 	f_perf_func
 end
 
-# ╔═╡ 63ceac01-a75b-4ade-9d5f-99a706f1cf98
+# ╔═╡ 2896b519-edbf-4f59-8a2f-d05cd14b3f99
+function plot_EV_both_condtions!(f, x, EVs_prop, EVs_bin, parameter;
+	printf = "%0.2f",
+	EV_xlabel = "Cognitive resource - x",
+	EV_ylabel = "Expected value",
+	x_offset = (0.1, 0.1),
+	y_offset = (0, 0))
 
+	# Define axes
+	ax_prop = Axis(f[1,1], 
+		xlabel = EV_xlabel,
+		ylabel = EV_ylabel,
+		title = "Proportional condition")
+
+	ax_bin = Axis(f[1,2], 
+		xlabel = EV_xlabel,
+		ylabel = EV_ylabel,
+		title = "Binary condition")
+
+	# Plot proportional
+	for (i, y) in enumerate(EVs_prop)
+		# Plot EV function
+		lines!(ax_prop, x, y)
+
+		# Plot optimal x
+		maxy, maxx = findmax(y)
+		scatter!(ax_prop, x[maxx], maxy, marker=:x)
+
+		# Label incentive
+		text!(ax_prop, x[end] - x_offset[1], y[end] - y_offset[1]; 
+			text = Printf.format(Printf.Format(printf), parameter[i]),
+			align = (:center, :top))
+	end
+
+	# Plot binary
+	for (i, y) in enumerate(EVs_bin)
+		lines!(ax_bin, x, y)
+
+		maxy, maxx = findmax(y)
+		scatter!(ax_bin, x[maxx], maxy, marker=:x)
+		
+		text!(ax_bin, x[end] - x_offset[1], y[end] - y_offset[2]; 
+			text = Printf.format(Printf.Format(printf), parameter[i]),
+			align = (:center, :top))
+	end
+
+	linkyaxes!(ax_prop, ax_bin)
+
+	return ax_prop, ax_bin
+end
+
+# ╔═╡ 1532c3f3-22c6-4230-9fa3-d004cb8ab66a
+md"## Effect of incentive on EV(x)
+
+#### Using the following parameter values:
+
+Kp $(@bind p1Kp Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Ki $(@bind p1Ki Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Kc $(@bind p1Kc Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Pmax $(@bind p1Pmax Scrubbable(0.01:0.05:2.0; default=0.9))"
+
+# ╔═╡ 63ceac01-a75b-4ade-9d5f-99a706f1cf98
+# Plot EV(x) by incentive
+begin
+	# Arbitrary parameter values
+	let EVs_prop, EVs_bin
+
+		# Range of incentives
+		incentives = 1:2:10
+	
+		# Computer EVs for both conditions
+		EVs_prop = [EV(x, incentive, p1Kc , p1Ki , p1Kp, p1Pmax; 
+			condition = "proportional") for incentive in incentives]
+	
+		EVs_bin = [EV(x, incentive, p1Kc , p1Ki , p1Kp, p1Pmax; 
+			condition = "binary") for incentive in incentives]
+	
+		# Plot results
+		f_EV_func = Figure()
+	
+		plot_EV_both_condtions!(f_EV_func, x, EVs_prop, EVs_bin, incentives;
+			printf = "%d€")
+		
+		f_EV_func
+
+	end
+
+end
+
+# ╔═╡ 30aaf19d-166b-40b1-88dd-a44bb53fbd71
+md"## Effect of Kp on EV(x)
+
+#### Using the following parameter values:
+
+Incentive $(@bind p2incentive Scrubbable(1:10; default=3))
+
+Ki $(@bind p2Ki Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Kc $(@bind p2Kc Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Pmax $(@bind p2Pmax Scrubbable(0.01:0.05:2.0; default=1.))"
+
+# ╔═╡ 0fda1020-c1e2-45e7-af50-c5f6c5434318
+# Plot EV(x) by Kp
+begin
+	# Arbitrary parameter values
+	let EVs_prop, EVs_bin
+
+		# Range of Kp
+		Kps = exp.(range(log(0.01), log(2), length=5))
+	
+		# Computer EVs for both conditions
+		EVs_prop = [EV(x, p2incentive, p2Kc , p2Ki , Kp, p2Pmax; 
+			condition = "proportional") for Kp in Kps]
+	
+		EVs_bin = [EV(x, p2incentive, p2Kc , p2Ki , Kp, p2Pmax; 
+			condition = "binary") for Kp in Kps]
+	
+		# Plot results
+		f_EV_Kp = Figure()
+	
+		plot_EV_both_condtions!(f_EV_Kp, x, EVs_prop, EVs_bin, Kps;
+			y_offset = (-0.03, -0.03),
+			x_offset = (-.08, -.08))
+		
+		f_EV_Kp
+	end
+end
+
+# ╔═╡ b81a3598-56cb-4b10-9b93-0c59ca189fc8
+md"## Effect of Pmax on EV(x)
+
+#### Using the following parameter values:
+
+Incentive $(@bind p3incentive Scrubbable(1:10; default=3))
+
+Ki $(@bind p3Ki Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Kc $(@bind p3Kc Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Kp $(@bind p3Kp Scrubbable(0.01:0.05:2.0; default=0.5))"
+
+# ╔═╡ 8897d312-7276-439a-9872-cbad99d0ee7c
+# Plot EV(x) by Pmax
+begin
+	# Arbitrary parameter values
+	let EVs_prop, EVs_bin
+
+		# Range of Kp
+		Pmaxs = (range(0.05, 1.5, length=5))
+	
+		# Computer EVs for both conditions
+		EVs_prop = [EV(x, p3incentive, p3Kc , p3Ki , p3Kp, Pmax; 
+			condition = "proportional") for Pmax in Pmaxs]
+	
+		EVs_bin = [EV(x, p3incentive, p3Kc , p3Ki , p3Kp, Pmax; 
+			condition = "binary") for Pmax in Pmaxs]
+	
+		# Plot results
+		f_EV_Pmax = Figure()
+	
+		plot_EV_both_condtions!(f_EV_Pmax, x, EVs_prop, EVs_bin, Pmaxs;
+			y_offset = (-0.1, -0.1))
+		
+		f_EV_Pmax
+	end
+end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
 
 [compat]
 CairoMakie = "~0.10.9"
+PlutoUI = "~0.7.52"
+StatsFuns = "~1.3.0"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -79,7 +290,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.3"
 manifest_format = "2.0"
-project_hash = "a644c5d7ce7f85163bb16b7c8d013df4493617f6"
+project_hash = "d3a4c4c167cdee17f7b2054d875351519103e941"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -96,6 +307,12 @@ weakdeps = ["ChainRulesCore", "Test"]
 git-tree-sha1 = "f35684b7349da49fcc8a9e520e30e45dbb077166"
 uuid = "398f06c4-4d28-53ec-89ca-5b2656b7603d"
 version = "0.2.1"
+
+[[deps.AbstractPlutoDingetjes]]
+deps = ["Pkg"]
+git-tree-sha1 = "91bd53c39b9cbfb5ef4b015e8b582d344532bd0a"
+uuid = "6e696c72-6542-2067-7265-42206c756150"
+version = "1.2.0"
 
 [[deps.AbstractTrees]]
 git-tree-sha1 = "faa260e4cb5aba097a73fab382dd4b5819d8ec8c"
@@ -583,6 +800,24 @@ git-tree-sha1 = "f218fe3736ddf977e0e772bc9a586b2383da2685"
 uuid = "34004b35-14d8-5ef3-9330-4cdb6864b03a"
 version = "0.3.23"
 
+[[deps.Hyperscript]]
+deps = ["Test"]
+git-tree-sha1 = "8d511d5b81240fc8e6802386302675bdf47737b9"
+uuid = "47d2ed2b-36de-50cf-bf87-49c2cf4b8b91"
+version = "0.0.4"
+
+[[deps.HypertextLiteral]]
+deps = ["Tricks"]
+git-tree-sha1 = "c47c5fa4c5308f27ccaac35504858d8914e102f9"
+uuid = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
+version = "0.9.4"
+
+[[deps.IOCapture]]
+deps = ["Logging", "Random"]
+git-tree-sha1 = "d75853a0bdbfb1ac815478bacd89cd27b550ace6"
+uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
+version = "0.2.3"
+
 [[deps.ImageAxes]]
 deps = ["AxisArrays", "ImageBase", "ImageCore", "Reexport", "SimpleTraits"]
 git-tree-sha1 = "2e4520d67b0cef90865b3ef727594d2a58e0e1f8"
@@ -848,6 +1083,11 @@ version = "0.3.26"
 [[deps.Logging]]
 uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
+[[deps.MIMEs]]
+git-tree-sha1 = "65f28ad4b594aebe22157d6fac869786a255b7eb"
+uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
+version = "0.1.4"
+
 [[deps.MKL_jll]]
 deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "Pkg"]
 git-tree-sha1 = "eb006abbd7041c28e0d16260e50a24f8f9104913"
@@ -1091,6 +1331,12 @@ deps = ["ColorSchemes", "Colors", "Dates", "PrecompileTools", "Printf", "Random"
 git-tree-sha1 = "f92e1315dadf8c46561fb9396e525f7200cdc227"
 uuid = "995b91a9-d308-5afd-9ec6-746e21dbc043"
 version = "1.3.5"
+
+[[deps.PlutoUI]]
+deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
+git-tree-sha1 = "e47cd150dbe0443c3a3651bc5b9cbd5576ab75b7"
+uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+version = "0.7.52"
 
 [[deps.PolygonOps]]
 git-tree-sha1 = "77b3d3605fc1cd0b42d95eba87dfcd2bf67d5ff6"
@@ -1452,6 +1698,11 @@ git-tree-sha1 = "9a6ae7ed916312b41236fcef7e0af564ef934769"
 uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 version = "0.9.13"
 
+[[deps.Tricks]]
+git-tree-sha1 = "aadb748be58b492045b4f56166b5188aa63ce549"
+uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
+version = "0.1.7"
+
 [[deps.TriplotBase]]
 git-tree-sha1 = "4d4ed7f294cda19382ff7de4c137d24d16adc89b"
 uuid = "981d1d27-644d-49a2-9326-4793e63143c3"
@@ -1461,6 +1712,11 @@ version = "0.1.0"
 git-tree-sha1 = "c8cdc29448afa1a306419f5d1c7af0854c171c80"
 uuid = "9d95972d-f1c8-5527-a6e0-b4b365fa01f6"
 version = "1.4.1"
+
+[[deps.URIs]]
+git-tree-sha1 = "b7a5e99f24892b6824a954199a45e9ffcc1c70f0"
+uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
+version = "1.5.0"
 
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
@@ -1624,7 +1880,15 @@ version = "3.5.0+0"
 # ╔═╡ Cell order:
 # ╠═d54ec906-892f-41fa-9bfa-9f46a9eac789
 # ╠═a1ec218e-52d7-11ee-3475-a58dab3dbd3c
+# ╠═26319531-19f6-4b29-b452-04208145f5af
+# ╠═dd84c870-69fd-4f50-962d-3edc698e0146
 # ╠═a4c5300d-93b8-47f5-a84a-fcb086f2d91c
+# ╠═2896b519-edbf-4f59-8a2f-d05cd14b3f99
+# ╠═1532c3f3-22c6-4230-9fa3-d004cb8ab66a
 # ╠═63ceac01-a75b-4ade-9d5f-99a706f1cf98
+# ╠═30aaf19d-166b-40b1-88dd-a44bb53fbd71
+# ╠═0fda1020-c1e2-45e7-af50-c5f6c5434318
+# ╠═b81a3598-56cb-4b10-9b93-0c59ca189fc8
+# ╠═8897d312-7276-439a-9872-cbad99d0ee7c
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
