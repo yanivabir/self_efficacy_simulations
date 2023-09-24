@@ -21,6 +21,7 @@ begin
 	using CairoMakie
 	set_theme!(theme_minimal())
 	using PlutoUI
+	using Roots
 end
 
 # ╔═╡ a1ec218e-52d7-11ee-3475-a58dab3dbd3c
@@ -41,6 +42,9 @@ begin
 		# Subtractive cost discounting to allow for negative EV
 		return exp_reward .- Kc .* exp_cost
 	end
+
+	# Derivative of EV when Pmax = 1
+	deriv_EV(x, incentive, Kc, Ki, Kp) = ((1 .+ Ki .* incentive) .* Kp)./(Kp .+ x)^2 .-2 .* Kc .* x
 end
 
 # ╔═╡ d778ab26-d6ac-4766-b67f-aa7496ce23f9
@@ -118,16 +122,97 @@ begin
 			xlabel = "Cognitive resource - x",
 			ylabel = "Performance (prop.)")
 
+		hlines!(ax_perf, 1., color = :grey, linestyle = :dash)
+
 		# Plot EV(x) as function of Kp
 		EVs = [EV(x, p1incentive, p1Kc , p1Ki , Kp; Pmax = Pmax) for Kp in Kps]
 
 		ax_EV = plot_func_of_x!(f_Kp[1,2], x, EVs, Kps;
 			xlabel = "Cognitive resource - x",
-			ylabel = "Expected value",
+			ylabel = "Expected value (\$)",
 			mark_max = true)
 		
 		f_Kp
 	end
+end
+
+# ╔═╡ e7d26c80-31c5-4bd9-8663-b5188853593f
+md"## What a bias in belief about Kp does to performance
+#### Using the following parameter values:
+
+Ki $(@bind p2Ki Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Kc $(@bind p2Kc Scrubbable(0.01:0.05:2.0; default=0.5))
+
+incentive $(@bind p2incentive Scrubbable(1:10; default=5))
+
+Pmax is set at 1.0 - maximal performance of participant.
+"
+
+# ╔═╡ ea43e593-6fa4-41c6-ae5f-87ad54a3032a
+md"We're going to find the maximum using a numerical algorithm on the analytical derivative of EV. Let's make sure it works, by plotting EV, the analytical derivative, and seeing that the maximum we find by grid method aligns with the maximum we find with the derivative"
+
+# ╔═╡ 98282c0d-7807-4e9e-9988-524a0e60ff4f
+# Check derivative function
+begin
+	let EVx, EVx_tag, x=0.:0.001:1.
+		this_deriv = x-> deriv_EV(x, p2incentive, p2Kc, p2Ki, 0.5)
+		
+		EVx = EV(x, p2incentive, p2Kc, p2Ki, 0.5; Pmax = 1.)
+		EVx_tag = [this_deriv(xi) for xi in x]
+
+		f_deriv = Figure()
+
+		ax_deriv = Axis(f_deriv[1,1])
+
+		# Mark y=0
+		hlines!(ax_deriv, 0, color=:grey, linestyle=:dash)
+
+		# Plot EV
+		lines!(ax_deriv, x, EVx)
+
+		# Find max of EV - grid method
+		maxy, maxx = findmax(EVx)
+		stem!(ax_deriv, x[maxx], maxy, marker=:x)
+
+		# Plot derivative
+		lines!(ax_deriv, x, EVx_tag)
+
+		# Find derivative of zero using numerical approx.
+		zerox = find_zero(this_deriv,
+			(0.,1.))
+		zeroy = this_deriv(zerox)
+		scatter!(ax_deriv, zerox, zeroy, marker=:x, color=:orange)
+
+		# Label functions
+		text!(ax_deriv, x[end], EVx[end]; 
+			text = "EV(x)",
+			align = (:center, :top))
+		text!(ax_deriv, x[end], EVx_tag[end]; 
+			text = "EV'(x)",
+			align = (:center, :top))
+
+		f_deriv
+	end
+end
+
+# ╔═╡ 78b77532-a2f2-41dd-8912-6dc7ccc8b359
+EVx
+
+# ╔═╡ c0c1c52a-1fb4-4749-ae5e-850dba4a649c
+# Behaviour simulation functions
+begin
+	function trial(incentive, 
+		Kc , 
+		Ki , 
+		true_Kp,
+		belief_Kp; 
+		Pmax = 1.0)
+
+		
+
+	end
+
 end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -136,7 +221,14 @@ PLUTO_PROJECT_TOML_CONTENTS = """
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
 StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
+
+[compat]
+CairoMakie = "~0.10.8"
+PlutoUI = "~0.7.52"
+Roots = "~2.0.19"
+StatsFuns = "~1.3.0"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -145,7 +237,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.3"
 manifest_format = "2.0"
-project_hash = "7033dcc7c2633172900742e122d20b9f615c6ca5"
+project_hash = "e9fab0920aa37ade8de984408912598ae7c1b0c3"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -330,6 +422,11 @@ version = "0.12.10"
 git-tree-sha1 = "08c8b6831dc00bfea825826be0bc8336fc369860"
 uuid = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
 version = "1.0.2"
+
+[[deps.CommonSolve]]
+git-tree-sha1 = "0eee5eb66b1cf62cd6ad1b460238e60e4b09400c"
+uuid = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
+version = "0.2.4"
 
 [[deps.CommonSubexpressions]]
 deps = ["MacroTools", "Test"]
@@ -1336,6 +1433,22 @@ git-tree-sha1 = "6ed52fdd3382cf21947b15e8870ac0ddbff736da"
 uuid = "f50d1b31-88e8-58de-be2c-1cc44531875f"
 version = "0.4.0+0"
 
+[[deps.Roots]]
+deps = ["ChainRulesCore", "CommonSolve", "Printf", "Setfield"]
+git-tree-sha1 = "ff42754a57bb0d6dcfe302fd0d4272853190421f"
+uuid = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
+version = "2.0.19"
+
+    [deps.Roots.extensions]
+    RootsForwardDiffExt = "ForwardDiff"
+    RootsIntervalRootFindingExt = "IntervalRootFinding"
+    RootsSymPyExt = "SymPy"
+
+    [deps.Roots.weakdeps]
+    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+    IntervalRootFinding = "d2bf35a9-74e0-55ec-b149-d360ff49b807"
+    SymPy = "24249f21-da20-56a4-8eb1-6a02cf4ae2e6"
+
 [[deps.RoundingEmulator]]
 git-tree-sha1 = "40b9edad2e5287e05bd413a38f61a8ff55b9557b"
 uuid = "5eaf0fd0-dfba-4ccb-bf02-d820a40db705"
@@ -1749,5 +1862,10 @@ version = "3.5.0+0"
 # ╠═26319531-19f6-4b29-b452-04208145f5af
 # ╠═dd84c870-69fd-4f50-962d-3edc698e0146
 # ╠═a4c5300d-93b8-47f5-a84a-fcb086f2d91c
+# ╠═e7d26c80-31c5-4bd9-8663-b5188853593f
+# ╠═ea43e593-6fa4-41c6-ae5f-87ad54a3032a
+# ╠═98282c0d-7807-4e9e-9988-524a0e60ff4f
+# ╠═78b77532-a2f2-41dd-8912-6dc7ccc8b359
+# ╠═c0c1c52a-1fb4-4749-ae5e-850dba4a649c
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
