@@ -95,7 +95,9 @@ Kc $(@bind p1Kc Scrubbable(0.01:0.05:2.0; default=0.5))
 
 incentive $(@bind p1incentive Scrubbable(1:10; default=5))
 
-Pmax is set at 1.0 - maximal performance of participant"
+Pmax is set at 1.0 - maximal performance of participant.
+
+As can be seen below, Kp is the inverse rate of approaching maximal performance with increased investment of cognitive effort. With rising Kp, the optimal amount of effort to invest rises, since more effort is needed to reach the same level of performance. But when Kp rises too high, the cost of effort overwhelms the benefit of added performance, and the optimal amountof effort decreases again."
 
 # ╔═╡ a4c5300d-93b8-47f5-a84a-fcb086f2d91c
 begin
