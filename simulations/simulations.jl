@@ -24,26 +24,58 @@ begin
 end
 
 # ╔═╡ a1ec218e-52d7-11ee-3475-a58dab3dbd3c
+# Model functions
 begin
 	# Performance function - depends on cognitive resource comitted, and two free parameters
 	perf(x, Pmax, Kp) = Pmax .* x ./ (Kp .+ x)
 	
-	function EV(x, incentive, Kc , Ki , Kp, Pmax; condition = "proportional")
+	function EV(x, incentive, Kc , Ki , Kp; Pmax = 1.0)
 		# This function returns expected value for a given effort, incentive and parameters.
 
 		# Cost is quadratic, comes from motor control theory
 		exp_cost = x .^ 2
-
-		# Expected outcome by condition
-		exp_outcome = condition == "proportional" ? perf(x, Pmax, Kp) : 
-			logistic.(perf(x, Pmax, Kp)) .- 0.5
-
+		
 		# Expected reward is dependent on incentive, with an incentive sensitivity parameter modulating it. It is mutliplied by outcome. Reward is assumed to be positive even when incentive is negligible.
-		exp_reward = (1 .+ Ki .* incentive) .* exp_outcome
+		exp_reward = (1 .+ Ki .* incentive) .* perf(x, Pmax, Kp)
 
 		# Subtractive cost discounting to allow for negative EV
 		return exp_reward .- Kc .* exp_cost
 	end
+end
+
+# ╔═╡ d778ab26-d6ac-4766-b67f-aa7496ce23f9
+# Plotting functions
+function plot_func_of_x!(f, x, ys, parameter;
+	printf = "%0.2f",
+	xlabel = "Cognitive resource - x",
+	ylabel = "",
+	x_offset = (0., 0.),
+	y_offset = (0., 0.),
+	mark_max = false)
+
+	# Define axis
+	ax = Axis(f[1,1], 
+		xlabel = xlabel,
+		ylabel = ylabel)
+
+	# Plot data
+	for (i, y) in enumerate(ys)
+		# Plot function
+		lines!(ax, x, y)
+
+		# Plot argmax of x
+		if mark_max
+			maxy, maxx = findmax(y)
+			scatter!(ax, x[maxx], maxy, marker=:x)
+		end
+
+		# Label parameter
+		text!(ax, x[end] - x_offset[1], y[end] - y_offset[1]; 
+			text = Printf.format(Printf.Format(printf), parameter[i]),
+			align = (:center, :top))
+	end
+
+	return ax
 end
 
 # ╔═╡ 26319531-19f6-4b29-b452-04208145f5af
@@ -54,219 +86,45 @@ begin
 end
 
 # ╔═╡ dd84c870-69fd-4f50-962d-3edc698e0146
-md"## Effect of Pmax and Kp on perf(x)"
-
-# ╔═╡ a4c5300d-93b8-47f5-a84a-fcb086f2d91c
-# Plot perf(x)
-begin
-	perf_xlabel = "Cognitive resource - x"
-	perf_ylabel = "Performance - Perf(x)"
-	
-	# Pmax governs the asymptote of the function
-	Pmaxs = range(0.01, 0.5, length=5)
-	ys_Pmax = [perf(x, Pmax, 0.5) for Pmax in Pmaxs]
-
-	# Kp governs the rate of approaching the asymptote
-	Kps = range(0.01, 0.5, length=5)
-	ys_Kp = [perf(x, 0.5, Kp) for Kp in Kps]
-	
-	f_perf_func = Figure()
-	ax_pref_func_pmax = Axis(f_perf_func[1,1], 
-		xlabel = perf_xlabel,
-		ylabel = perf_ylabel,
-		title = "Pmax")
-
-	ax_pref_func_Kp = Axis(f_perf_func[1,2], 
-		xlabel = perf_xlabel,
-		ylabel = perf_ylabel,
-		title = "Kp")
-
-	for (i, y) in enumerate(ys_Pmax)
-		lines!(ax_pref_func_pmax, x, y)
-		text!(ax_pref_func_pmax, x[end]-0.1, y[end]; 
-			text = @sprintf("%.2f", Pmaxs[i]))
-	end
-
-	for (i, y) in enumerate(ys_Kp)
-		lines!(ax_pref_func_Kp, x, y)
-		
-		text!(ax_pref_func_Kp, x[end]-0.1, y[end]; 
-			text = @sprintf("%.2f", Kps[i]))
-	end
-
-
-	linkyaxes!(ax_pref_func_pmax, ax_pref_func_Kp)
-	f_perf_func
-end
-
-# ╔═╡ 2896b519-edbf-4f59-8a2f-d05cd14b3f99
-function plot_EV_both_condtions!(f, x, EVs_prop, EVs_bin, parameter;
-	printf = "%0.2f",
-	EV_xlabel = "Cognitive resource - x",
-	EV_ylabel = "Expected value",
-	x_offset = (0.1, 0.1),
-	y_offset = (0, 0))
-
-	# Define axes
-	ax_prop = Axis(f[1,1], 
-		xlabel = EV_xlabel,
-		ylabel = EV_ylabel,
-		title = "Proportional condition")
-
-	ax_bin = Axis(f[1,2], 
-		xlabel = EV_xlabel,
-		ylabel = EV_ylabel,
-		title = "Binary condition")
-
-	# Plot proportional
-	for (i, y) in enumerate(EVs_prop)
-		# Plot EV function
-		lines!(ax_prop, x, y)
-
-		# Plot optimal x
-		maxy, maxx = findmax(y)
-		scatter!(ax_prop, x[maxx], maxy, marker=:x)
-
-		# Label incentive
-		text!(ax_prop, x[end] - x_offset[1], y[end] - y_offset[1]; 
-			text = Printf.format(Printf.Format(printf), parameter[i]),
-			align = (:center, :top))
-	end
-
-	# Plot binary
-	for (i, y) in enumerate(EVs_bin)
-		lines!(ax_bin, x, y)
-
-		maxy, maxx = findmax(y)
-		scatter!(ax_bin, x[maxx], maxy, marker=:x)
-		
-		text!(ax_bin, x[end] - x_offset[1], y[end] - y_offset[2]; 
-			text = Printf.format(Printf.Format(printf), parameter[i]),
-			align = (:center, :top))
-	end
-
-	linkyaxes!(ax_prop, ax_bin)
-
-	return ax_prop, ax_bin
-end
-
-# ╔═╡ 1532c3f3-22c6-4230-9fa3-d004cb8ab66a
-md"## Effect of incentive on EV(x)
-
+md"## Effect of Kp on perf(x) and EV(x)
 #### Using the following parameter values:
-
-Kp $(@bind p1Kp Scrubbable(0.01:0.05:2.0; default=0.5))
 
 Ki $(@bind p1Ki Scrubbable(0.01:0.05:2.0; default=0.5))
 
 Kc $(@bind p1Kc Scrubbable(0.01:0.05:2.0; default=0.5))
 
-Pmax $(@bind p1Pmax Scrubbable(0.01:0.05:2.0; default=0.9))"
+incentive $(@bind p1incentive Scrubbable(1:10; default=5))
 
-# ╔═╡ 63ceac01-a75b-4ade-9d5f-99a706f1cf98
-# Plot EV(x) by incentive
+Pmax is set at 1.0 - maximal performance of participant"
+
+# ╔═╡ a4c5300d-93b8-47f5-a84a-fcb086f2d91c
 begin
-	# Arbitrary parameter values
-	let EVs_prop, EVs_bin
-
-		# Range of incentives
-		incentives = 1:2:10
-	
-		# Computer EVs for both conditions
-		EVs_prop = [EV(x, incentive, p1Kc , p1Ki , p1Kp, p1Pmax; 
-			condition = "proportional") for incentive in incentives]
-	
-		EVs_bin = [EV(x, incentive, p1Kc , p1Ki , p1Kp, p1Pmax; 
-			condition = "binary") for incentive in incentives]
-	
-		# Plot results
-		f_EV_func = Figure()
-	
-		plot_EV_both_condtions!(f_EV_func, x, EVs_prop, EVs_bin, incentives;
-			printf = "%d€")
+	let Pmax = 1.0
+		# perf_xlabel = "Cognitive resource - x"
+		# perf_ylabel = "Performance - Perf(x)"
 		
-		f_EV_func
-
-	end
-
-end
-
-# ╔═╡ 30aaf19d-166b-40b1-88dd-a44bb53fbd71
-md"## Effect of Kp on EV(x)
-
-#### Using the following parameter values:
-
-Incentive $(@bind p2incentive Scrubbable(1:10; default=3))
-
-Ki $(@bind p2Ki Scrubbable(0.01:0.05:2.0; default=0.5))
-
-Kc $(@bind p2Kc Scrubbable(0.01:0.05:2.0; default=0.5))
-
-Pmax $(@bind p2Pmax Scrubbable(0.01:0.05:2.0; default=1.))"
-
-# ╔═╡ 0fda1020-c1e2-45e7-af50-c5f6c5434318
-# Plot EV(x) by Kp
-begin
-	# Arbitrary parameter values
-	let EVs_prop, EVs_bin
-
-		# Range of Kp
-		Kps = exp.(range(log(0.01), log(2), length=5))
-	
-		# Computer EVs for both conditions
-		EVs_prop = [EV(x, p2incentive, p2Kc , p2Ki , Kp, p2Pmax; 
-			condition = "proportional") for Kp in Kps]
-	
-		EVs_bin = [EV(x, p2incentive, p2Kc , p2Ki , Kp, p2Pmax; 
-			condition = "binary") for Kp in Kps]
-	
-		# Plot results
-		f_EV_Kp = Figure()
-	
-		plot_EV_both_condtions!(f_EV_Kp, x, EVs_prop, EVs_bin, Kps;
-			y_offset = (-0.03, -0.03),
-			x_offset = (-.08, -.08))
+		# Kp governs the rate of approaching the asymptotic performance
+		Kps = exp.(range(log(0.01), log(3.0), length=5))
 		
-		f_EV_Kp
-	end
-end
+		# Initialize figure
+		f_Kp = Figure()
 
-# ╔═╡ b81a3598-56cb-4b10-9b93-0c59ca189fc8
-md"## Effect of Pmax on EV(x)
-
-#### Using the following parameter values:
-
-Incentive $(@bind p3incentive Scrubbable(1:10; default=3))
-
-Ki $(@bind p3Ki Scrubbable(0.01:0.05:2.0; default=0.5))
-
-Kc $(@bind p3Kc Scrubbable(0.01:0.05:2.0; default=0.5))
-
-Kp $(@bind p3Kp Scrubbable(0.01:0.05:2.0; default=0.5))"
-
-# ╔═╡ 8897d312-7276-439a-9872-cbad99d0ee7c
-# Plot EV(x) by Pmax
-begin
-	# Arbitrary parameter values
-	let EVs_prop, EVs_bin
-
-		# Range of Kp
-		Pmaxs = (range(0.05, 1.5, length=5))
-	
-		# Computer EVs for both conditions
-		EVs_prop = [EV(x, p3incentive, p3Kc , p3Ki , p3Kp, Pmax; 
-			condition = "proportional") for Pmax in Pmaxs]
-	
-		EVs_bin = [EV(x, p3incentive, p3Kc , p3Ki , p3Kp, Pmax; 
-			condition = "binary") for Pmax in Pmaxs]
-	
-		# Plot results
-		f_EV_Pmax = Figure()
-	
-		plot_EV_both_condtions!(f_EV_Pmax, x, EVs_prop, EVs_bin, Pmaxs;
-			y_offset = (-0.1, -0.1))
+		# Plot perf(x) as function of Kp
+		perfs = [perf(x, Pmax, Kp) for Kp in Kps]
 		
-		f_EV_Pmax
+		ax_perf = plot_func_of_x!(f_Kp[1,1], x, perfs, Kps;
+			xlabel = "Cognitive resource - x",
+			ylabel = "Performance (prop.)")
+
+		# Plot EV(x) as function of Kp
+		EVs = [EV(x, p1incentive, p1Kc , p1Ki , Kp; Pmax = Pmax) for Kp in Kps]
+
+		ax_EV = plot_func_of_x!(f_Kp[1,2], x, EVs, Kps;
+			xlabel = "Cognitive resource - x",
+			ylabel = "Expected value",
+			mark_max = true)
+		
+		f_Kp
 	end
 end
 
@@ -1885,15 +1743,9 @@ version = "3.5.0+0"
 # ╔═╡ Cell order:
 # ╠═d54ec906-892f-41fa-9bfa-9f46a9eac789
 # ╠═a1ec218e-52d7-11ee-3475-a58dab3dbd3c
+# ╠═d778ab26-d6ac-4766-b67f-aa7496ce23f9
 # ╠═26319531-19f6-4b29-b452-04208145f5af
 # ╠═dd84c870-69fd-4f50-962d-3edc698e0146
 # ╠═a4c5300d-93b8-47f5-a84a-fcb086f2d91c
-# ╠═2896b519-edbf-4f59-8a2f-d05cd14b3f99
-# ╠═1532c3f3-22c6-4230-9fa3-d004cb8ab66a
-# ╠═63ceac01-a75b-4ade-9d5f-99a706f1cf98
-# ╠═30aaf19d-166b-40b1-88dd-a44bb53fbd71
-# ╠═0fda1020-c1e2-45e7-af50-c5f6c5434318
-# ╠═b81a3598-56cb-4b10-9b93-0c59ca189fc8
-# ╠═8897d312-7276-439a-9872-cbad99d0ee7c
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
