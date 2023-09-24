@@ -45,6 +45,10 @@ begin
 
 	# Derivative of EV when Pmax = 1
 	deriv_EV(x, incentive, Kc, Ki, Kp) = ((1 .+ Ki .* incentive) .* Kp)./(Kp .+ x)^2 .-2 .* Kc .* x
+
+	# Return optimal x
+	optim_x(x, incentive, Kc, Ki, Kp) = find_zero(x -> 
+		deriv_EV(x, incentive, Kc, Ki, Kp), (0.,1.))
 end
 
 # ╔═╡ d778ab26-d6ac-4766-b67f-aa7496ce23f9
@@ -155,10 +159,10 @@ md"We're going to find the maximum using a numerical algorithm on the analytical
 # ╔═╡ 98282c0d-7807-4e9e-9988-524a0e60ff4f
 # Check derivative function
 begin
-	let EVx, EVx_tag, x=0.:0.001:1.
-		this_deriv = x-> deriv_EV(x, p2incentive, p2Kc, p2Ki, 0.5)
+	let EVx, EVx_tag, x = 0.:0.001:1., Kp = 0.5
+		this_deriv = x-> deriv_EV(x, p2incentive, p2Kc, p2Ki, Kp)
 		
-		EVx = EV(x, p2incentive, p2Kc, p2Ki, 0.5; Pmax = 1.)
+		EVx = EV(x, p2incentive, p2Kc, p2Ki, Kp; Pmax = 1.)
 		EVx_tag = [this_deriv(xi) for xi in x]
 
 		f_deriv = Figure()
@@ -179,8 +183,7 @@ begin
 		lines!(ax_deriv, x, EVx_tag)
 
 		# Find derivative of zero using numerical approx.
-		zerox = find_zero(this_deriv,
-			(0.,1.))
+		zerox = optim_x(x, p2incentive, p2Kc, p2Ki, Kp)
 		zeroy = this_deriv(zerox)
 		scatter!(ax_deriv, zerox, zeroy, marker=:x, color=:orange)
 
@@ -196,9 +199,6 @@ begin
 	end
 end
 
-# ╔═╡ 78b77532-a2f2-41dd-8912-6dc7ccc8b359
-EVx
-
 # ╔═╡ c0c1c52a-1fb4-4749-ae5e-850dba4a649c
 # Behaviour simulation functions
 begin
@@ -207,10 +207,19 @@ begin
 		Ki , 
 		true_Kp,
 		belief_Kp; 
+		condition = "prop",
 		Pmax = 1.0)
 
-		
+		# Agent invests effort according to belief
+		effort = optim_x(x, incentive, Kc, Ki, belief_Kp)
 
+		# Actual performance
+		actual_perf = perf(effort, Pmax, Kp)
+
+		# Reward, based on condition
+		reward = condition == "prop" ? actual_perf : (rand() < actual_perf) + 0.
+
+		return effort, actual_perf, reward
 	end
 
 end
@@ -1865,7 +1874,6 @@ version = "3.5.0+0"
 # ╠═e7d26c80-31c5-4bd9-8663-b5188853593f
 # ╠═ea43e593-6fa4-41c6-ae5f-87ad54a3032a
 # ╠═98282c0d-7807-4e9e-9988-524a0e60ff4f
-# ╠═78b77532-a2f2-41dd-8912-6dc7ccc8b359
 # ╠═c0c1c52a-1fb4-4749-ae5e-850dba4a649c
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
