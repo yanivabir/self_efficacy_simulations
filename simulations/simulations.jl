@@ -59,7 +59,10 @@ function plot_func_of_x!(f, x, ys, parameter;
 	ylabel = "",
 	x_offset = (0., 0.),
 	y_offset = (0., 0.),
-	mark_max = false)
+	mark_max = false,
+	label = true,
+	linewidth = 1.5
+)
 
 	# Define axis
 	ax = Axis(f[1,1], 
@@ -69,7 +72,9 @@ function plot_func_of_x!(f, x, ys, parameter;
 	# Plot data
 	for (i, y) in enumerate(ys)
 		# Plot function
-		lines!(ax, x, y)
+		lines!(ax, x, y, 
+			label = Printf.format(Printf.Format(printf), parameter[i]),
+			linewidth = linewidth)
 
 		# Plot argmax of x
 		if mark_max
@@ -78,9 +83,11 @@ function plot_func_of_x!(f, x, ys, parameter;
 		end
 
 		# Label parameter
-		text!(ax, x[end] - x_offset[1], y[end] - y_offset[1]; 
-			text = Printf.format(Printf.Format(printf), parameter[i]),
-			align = (:center, :top))
+		if label
+			text!(ax, x[end] - x_offset[1], y[end] - y_offset[1]; 
+				text = Printf.format(Printf.Format(printf), parameter[i]),
+				align = (:center, :top))
+		end
 	end
 
 	return ax
@@ -91,6 +98,32 @@ end
 begin
 	# Arbitrarity set range of x to 0-1, but we treat it merely as a non-negative quantity
 	x = 0:0.01:1
+end
+
+# ╔═╡ c0c1c52a-1fb4-4749-ae5e-850dba4a649c
+# Behaviour simulation functions
+begin
+	function trial(incentive, 
+		Kc, 
+		Ki, 
+		true_Kp,
+		belief_Kp; 
+		condition = "prop",
+		Pmax = 1.0)
+
+		# Agent invests effort according to belief
+		effort = optim_x(x, incentive, Kc, Ki, belief_Kp)
+
+		# Actual performance
+		actual_perf = perf(effort, Pmax, true_Kp)
+
+		# Reward, based on condition
+		reward = condition == "prop" ? actual_perf .* incentive : ((rand() < actual_perf) + 0.) .* incentive
+
+		return Dict("effort" => effort, 
+			"actual_perf" => actual_perf,
+			"reward" => reward)
+	end
 end
 
 # ╔═╡ dd84c870-69fd-4f50-962d-3edc698e0146
@@ -140,8 +173,13 @@ begin
 	end
 end
 
+# ╔═╡ ea43e593-6fa4-41c6-ae5f-87ad54a3032a
+md"## Validating derivative method for finding optimal effort
+We're going to find the maximum using a numerical algorithm on the analytical derivative of EV. Let's make sure it works, by plotting EV, the analytical derivative, and seeing that the maximum we find by grid method aligns with the maximum we find with the derivative.
+As can be seen below, both methods of finding the optimal x converge, so we can use the derivative (haven't actually checked which is faster)."
+
 # ╔═╡ e7d26c80-31c5-4bd9-8663-b5188853593f
-md"## What a bias in belief about Kp does to performance
+md"## Performance as a function of a bias in belief about Kp
 #### Using the following parameter values:
 
 Ki $(@bind p2Ki Scrubbable(0.01:0.05:2.0; default=0.5))
@@ -152,9 +190,6 @@ incentive $(@bind p2incentive Scrubbable(1:10; default=5))
 
 Pmax is set at 1.0 - maximal performance of participant.
 "
-
-# ╔═╡ ea43e593-6fa4-41c6-ae5f-87ad54a3032a
-md"We're going to find the maximum using a numerical algorithm on the analytical derivative of EV. Let's make sure it works, by plotting EV, the analytical derivative, and seeing that the maximum we find by grid method aligns with the maximum we find with the derivative"
 
 # ╔═╡ 98282c0d-7807-4e9e-9988-524a0e60ff4f
 # Check derivative function
@@ -199,27 +234,113 @@ begin
 	end
 end
 
-# ╔═╡ c0c1c52a-1fb4-4749-ae5e-850dba4a649c
-# Behaviour simulation functions
+# ╔═╡ 5471865c-55c9-469a-ad70-16b21d0980b9
+md"
+We plot below the effect of bias in the agent's belief about Kp on effort, performance, and their combination as value. We observe that the effect of bias is dependent on the true value of Kp, or the agent's true underlying ability. For low values of true Kp, that is, high ability agents, believing that your ability is lower than it is helps performance, while believing that your ability is higher than it really is hinders performance. For middle ability agents, both types of bias result in worse performance. For low ability agents, believing that your ability is higher than it really is helps performance, while believing that it is lower than it truely is results in worse performance. The effects on performance are small - up to 2 percentage points.
+"
+
+# ╔═╡ 21650da0-79fa-47ce-8fe6-1fea26f043ce
 begin
-	function trial(incentive, 
-		Kc , 
-		Ki , 
-		true_Kp,
-		belief_Kp; 
-		condition = "prop",
-		Pmax = 1.0)
 
-		# Agent invests effort according to belief
-		effort = optim_x(x, incentive, Kc, Ki, belief_Kp)
+	let Kps = 0.1:0.05:2., biases = [0.5, 1.0, 1.5]
 
-		# Actual performance
-		actual_perf = perf(effort, Pmax, Kp)
+		trials = [[trial(p2incentive, 
+				p2Kc, 
+				p2Ki, 
+				true_Kp, 
+				bias * true_Kp) for true_Kp in Kps] for bias in biases]
 
-		# Reward, based on condition
-		reward = condition == "prop" ? actual_perf : (rand() < actual_perf) + 0.
+		effort = [[t["effort"] for t in b] for b in trials]
+		actual_perf = [[t["actual_perf"] for t in b] for b in trials]
+		rewards = [[t["reward"] for t in b] for b in trials]
+		value = [actual_perf[i] .- p2Kc .* effort[i] .^2 for i in 1:length(effort)]
 
-		return effort, actual_perf, reward
+		function get_diff(x)
+			diff = [t .- x[2] for t in x]
+			diff[2] = [NaN for _ in x[2]]
+			return diff
+		end
+
+		f_bias = Figure()
+
+		# Plot effort
+		plot_func_of_x!(f_bias[2,1], Kps, effort, (biases .- 1) .* 100;
+			printf = "%+d%%",
+			xlabel = "True Kp",
+			ylabel = "Effort invested",
+			label = false,
+			linewidth = 2
+		)
+
+		# Plot effort difference
+		effort_diff = get_diff(effort)
+		
+		ax_effort_diff = plot_func_of_x!(f_bias[2,2], 
+			Kps, effort_diff, (biases .- 1) .* 100;
+			printf = "%+d%%",
+			xlabel = "True Kp",
+			ylabel = "Effort relative\nto no bias",
+			label = false,
+			linewidth = 2
+		)
+
+		hlines!(ax_effort_diff, [0.], linestyle = :dash, color = :grey)
+	
+		# Plot actual performance
+		ax_actual = plot_func_of_x!(f_bias[3,1], 
+			Kps, actual_perf, (biases .- 1) .* 100;
+			printf = "%+d%%",
+			xlabel = "True Kp",
+			ylabel = "Performance (prop.)",
+			label = false,
+			linewidth = 2
+		)
+
+		# Plot performance difference
+		actual_perf_diff = get_diff(actual_perf)
+		
+		ax_actual_diff = plot_func_of_x!(f_bias[3,2], 
+			Kps, actual_perf_diff, (biases .- 1) .* 100;
+			printf = "%+d%%",
+			xlabel = "True Kp",
+			ylabel = "Perf. relative\nto no bias",
+			label = false,
+			linewidth = 2
+		)
+
+		hlines!(ax_actual_diff, [0.], linestyle = :dash, color = :grey)
+
+		# Plot value
+		ax_value = plot_func_of_x!(f_bias[4,1], 
+			Kps, value, (biases .- 1) .* 100;
+			printf = "%+d%%",
+			xlabel = "True Kp",
+			ylabel = "Internal value",
+			label = false,
+			linewidth = 2
+		)
+
+		# Plot value difference
+		value_diff = get_diff(value)
+
+		ax_value_diff = plot_func_of_x!(f_bias[4,2], 
+			Kps, value_diff, (biases .- 1) .* 100;
+			printf = "%+d%%",
+			xlabel = "True Kp",
+			ylabel = "Value relative to\nno bias",
+			label = false,
+			linewidth = 2
+		)
+
+		hlines!(ax_value_diff, [0.], linestyle = :dash, color = :grey)
+
+		# Plot legend
+		f_bias[1, 1:2] = Legend(f_bias, ax_actual, "Bias in Kp", framevisible = false,
+			orientation = :horizontal)
+		
+		f_bias
+
+ 
 	end
 
 end
@@ -1868,12 +1989,14 @@ version = "3.5.0+0"
 # ╠═d54ec906-892f-41fa-9bfa-9f46a9eac789
 # ╠═a1ec218e-52d7-11ee-3475-a58dab3dbd3c
 # ╠═d778ab26-d6ac-4766-b67f-aa7496ce23f9
+# ╠═c0c1c52a-1fb4-4749-ae5e-850dba4a649c
 # ╠═26319531-19f6-4b29-b452-04208145f5af
 # ╠═dd84c870-69fd-4f50-962d-3edc698e0146
 # ╠═a4c5300d-93b8-47f5-a84a-fcb086f2d91c
-# ╠═e7d26c80-31c5-4bd9-8663-b5188853593f
 # ╠═ea43e593-6fa4-41c6-ae5f-87ad54a3032a
 # ╠═98282c0d-7807-4e9e-9988-524a0e60ff4f
-# ╠═c0c1c52a-1fb4-4749-ae5e-850dba4a649c
+# ╠═e7d26c80-31c5-4bd9-8663-b5188853593f
+# ╠═5471865c-55c9-469a-ad70-16b21d0980b9
+# ╠═21650da0-79fa-47ce-8fe6-1fea26f043ce
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
