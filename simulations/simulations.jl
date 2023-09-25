@@ -22,6 +22,7 @@ begin
 	set_theme!(theme_minimal())
 	using PlutoUI
 	using Roots
+	using Statistics
 end
 
 # ╔═╡ a1ec218e-52d7-11ee-3475-a58dab3dbd3c
@@ -176,28 +177,25 @@ end
 # ╔═╡ ea43e593-6fa4-41c6-ae5f-87ad54a3032a
 md"## Validating derivative method for finding optimal effort
 We're going to find the maximum using a numerical algorithm on the analytical derivative of EV. Let's make sure it works, by plotting EV, the analytical derivative, and seeing that the maximum we find by grid method aligns with the maximum we find with the derivative.
-As can be seen below, both methods of finding the optimal x converge, so we can use the derivative (haven't actually checked which is faster)."
+As can be seen below, both methods of finding the optimal x converge, so we can use the derivative (haven't actually checked which is faster).
 
-# ╔═╡ e7d26c80-31c5-4bd9-8663-b5188853593f
-md"## Performance as a function of a bias in belief about Kp
-#### Using the following parameter values:
+### Using these parameters:
+Ki $(@bind dKi Scrubbable(0.01:0.05:2.0; default=0.5))
 
-Ki $(@bind p2Ki Scrubbable(0.01:0.05:2.0; default=0.5))
+Kc $(@bind dKc Scrubbable(0.01:0.05:2.0; default=0.5))
 
-Kc $(@bind p2Kc Scrubbable(0.01:0.05:2.0; default=0.5))
+Kp $(@bind dKp Scrubbable(0.01:0.05:2.0; default=0.5))
 
-incentive $(@bind p2incentive Scrubbable(1:10; default=5))
-
-Pmax is set at 1.0 - maximal performance of participant.
+incentive $(@bind dincentive Scrubbable(1:10; default=5))
 "
 
 # ╔═╡ 98282c0d-7807-4e9e-9988-524a0e60ff4f
 # Check derivative function
 begin
-	let EVx, EVx_tag, x = 0.:0.001:1., Kp = 0.5
-		this_deriv = x-> deriv_EV(x, p2incentive, p2Kc, p2Ki, Kp)
+	let EVx, EVx_tag, x = 0.:0.001:1.
+		this_deriv = x-> deriv_EV(x, dincentive, dKc, dKi, dKp)
 		
-		EVx = EV(x, p2incentive, p2Kc, p2Ki, Kp; Pmax = 1.)
+		EVx = EV(x, dincentive, dKc, dKi, dKp; Pmax = 1.)
 		EVx_tag = [this_deriv(xi) for xi in x]
 
 		f_deriv = Figure()
@@ -218,7 +216,7 @@ begin
 		lines!(ax_deriv, x, EVx_tag)
 
 		# Find derivative of zero using numerical approx.
-		zerox = optim_x(x, p2incentive, p2Kc, p2Ki, Kp)
+		zerox = optim_x(x, dincentive, dKc, dKi, dKp)
 		zeroy = this_deriv(zerox)
 		scatter!(ax_deriv, zerox, zeroy, marker=:x, color=:orange)
 
@@ -234,15 +232,28 @@ begin
 	end
 end
 
-# ╔═╡ 5471865c-55c9-469a-ad70-16b21d0980b9
-md"
-We plot below the effect of bias in the agent's belief about Kp on effort, performance, and their combination as value. We observe that the effect of bias is dependent on the true value of Kp, or the agent's true underlying ability. For low values of true Kp, that is, high ability agents, believing that your ability is lower than it is helps performance, while believing that your ability is higher than it really is hinders performance. For middle ability agents, both types of bias result in worse performance. For low ability agents, believing that your ability is higher than it really is helps performance, while believing that it is lower than it truely is results in worse performance. The effects on performance are small - up to 2 percentage points.
+# ╔═╡ e7d26c80-31c5-4bd9-8663-b5188853593f
+md"## Performance as a function of a bias in belief about Kp
+#### Using the following parameter values:
+
+Ki $(@bind p2Ki Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Kc $(@bind p2Kc Scrubbable(0.01:0.05:2.0; default=0.5))
+
+incentive $(@bind p2incentive Scrubbable(1:10; default=5))
+
+negative bias $(@bind nbias NumberField(0.0:0.01:1.0; default=0.5))
+positive bias $(@bind pbias NumberField(1.0:0.01:10.0; default=1.5))
+
+Pmax is set at 1.0 - maximal performance of participant.
 "
 
 # ╔═╡ 21650da0-79fa-47ce-8fe6-1fea26f043ce
 begin
 
-	let Kps = 0.1:0.05:2., biases = [0.5, 1.0, 1.5]
+	let Kps = 0.1:0.05:2.
+
+		biases = [nbias, 1.0, pbias]
 
 		trials = [[trial(p2incentive, 
 				p2Kc, 
@@ -256,8 +267,8 @@ begin
 		value = [actual_perf[i] .- p2Kc .* effort[i] .^2 for i in 1:length(effort)]
 
 		function get_diff(x)
-			diff = [t .- x[2] for t in x]
-			diff[2] = [NaN for _ in x[2]]
+			diff = [t .- x[Int(median(1:length(x)))] for t in x]
+			diff[Int(median(1:length(x)))] = [NaN for _ in x[2]]
 			return diff
 		end
 
@@ -352,6 +363,7 @@ CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
 
 [compat]
@@ -367,7 +379,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.3"
 manifest_format = "2.0"
-project_hash = "e9fab0920aa37ade8de984408912598ae7c1b0c3"
+project_hash = "6b66360937f79a70ff2eff5d7b79921726aab430"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -1996,7 +2008,6 @@ version = "3.5.0+0"
 # ╠═ea43e593-6fa4-41c6-ae5f-87ad54a3032a
 # ╠═98282c0d-7807-4e9e-9988-524a0e60ff4f
 # ╠═e7d26c80-31c5-4bd9-8663-b5188853593f
-# ╠═5471865c-55c9-469a-ad70-16b21d0980b9
 # ╠═21650da0-79fa-47ce-8fe6-1fea26f043ce
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
