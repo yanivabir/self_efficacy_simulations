@@ -45,7 +45,7 @@ begin
 	end
 
 	# Derivative of EV when Pmax = 1
-	deriv_EV(x, incentive, Kc, Ki, Kp) = ((1 .+ Ki .* incentive) .* Kp)./(Kp .+ x)^2 .-2 .* Kc .* x
+	deriv_EV(x, incentive, Kc, Ki, Kp) = ((1 .+ Ki .* incentive) .* Kp)./(Kp .+ x)^2 	.-2 .* Kc .* x
 
 	# Return optimal x
 	optim_x(x, incentive, Kc, Ki, Kp) = find_zero(x -> 
