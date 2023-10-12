@@ -128,8 +128,10 @@ begin
 end
 
 # ╔═╡ dd84c870-69fd-4f50-962d-3edc698e0146
-md"## Effect of Kp on perf(x) and EV(x)
+md"## Effect of Pmax on perf(x) and EV(x)
 #### Using the following parameter values:
+
+Kp $(@bind p1Kp Scrubbable(0.01:0.05:4.0; default=0.05))
 
 Ki $(@bind p1Ki Scrubbable(0.01:0.05:2.0; default=0.5))
 
@@ -137,40 +139,41 @@ Kc $(@bind p1Kc Scrubbable(0.01:0.05:2.0; default=0.5))
 
 incentive $(@bind p1incentive Scrubbable(1:10; default=5))
 
-Pmax is set at 1.0 - maximal performance of participant.
+Looking at the following range on the x axis: 0 to $(@bind p1xhigh Scrubbable(0.01:0.05:1.0; default=0.2))
 
-As can be seen below, Kp is the inverse rate of approaching maximal performance with increased investment of cognitive effort. With rising Kp, the optimal amount of effort to invest rises, since more effort is needed to reach the same level of performance. But when Kp rises too high, the cost of effort overwhelms the benefit of added performance, and the optimal amountof effort decreases again."
+Using these parameters the linear portion of the effort-performance sigmoid lies roughly around 0.5 performance.
+"
 
 # ╔═╡ a4c5300d-93b8-47f5-a84a-fcb086f2d91c
 begin
-	let Pmax = 1.0
-		# perf_xlabel = "Cognitive resource - x"
-		# perf_ylabel = "Performance - Perf(x)"
+	let
+		# Range on x axis
+		x = 0:0.01:p1xhigh
 		
-		# Kp governs the rate of approaching the asymptotic performance
-		Kps = exp.(range(log(0.01), log(3.0), length=5))
+		# Pmax multiplies the performance function
+		Pmaxs = range(0.85, 1.15, length=5)
 		
 		# Initialize figure
-		f_Kp = Figure()
+		f_Pmax = Figure()
 
 		# Plot perf(x) as function of Kp
-		perfs = [perf(x, Pmax, Kp) for Kp in Kps]
+		perfs = [perf(x, Pmax, p1Kp) for Pmax in Pmaxs]
 		
-		ax_perf = plot_func_of_x!(f_Kp[1,1], x, perfs, Kps;
+		ax_perf = plot_func_of_x!(f_Pmax[1,1], x, perfs, Pmaxs;
 			xlabel = "Cognitive resource - x",
 			ylabel = "Performance (prop.)")
 
 		hlines!(ax_perf, 1., color = :grey, linestyle = :dash)
 
 		# Plot EV(x) as function of Kp
-		EVs = [EV(x, p1incentive, p1Kc , p1Ki , Kp; Pmax = Pmax) for Kp in Kps]
+		EVs = [EV(x, p1incentive, p1Kc, p1Ki , p1Kp; Pmax = Pmax) for Pmax in Pmaxs]
 
-		ax_EV = plot_func_of_x!(f_Kp[1,2], x, EVs, Kps;
+		ax_EV = plot_func_of_x!(f_Pmax[1,2], x, EVs, Pmaxs;
 			xlabel = "Cognitive resource - x",
 			ylabel = "Expected value (\$)",
 			mark_max = true)
 		
-		f_Kp
+		f_Pmax
 	end
 end
 
