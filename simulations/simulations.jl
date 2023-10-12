@@ -31,14 +31,16 @@ begin
 	# Performance function - depends on cognitive resource comitted, and two free parameters
 	perf(x, Pmax, Kp) = Pmax .* x ./ (Kp .+ x)
 	
-	function EV(x, incentive, Kc , Ki , Kp; Pmax = 1.0)
+	function EV(x, incentive, Kc , Ki , Kp; Pmax = 1.0, condition = "prop", 			criterion_perf = 0.75)
 		# This function returns expected value for a given effort, incentive and parameters.
 
 		# Cost is quadratic, comes from motor control theory
 		exp_cost = x .^ 2
 		
 		# Expected reward is dependent on incentive, with an incentive sensitivity parameter modulating it. It is mutliplied by outcome. Reward is assumed to be positive even when incentive is negligible.
-		exp_reward = (1 .+ Ki .* incentive) .* perf(x, Pmax, Kp)
+		exp_reward = condition == "prop" ? 
+			(1 .+ Ki .* incentive) .* perf(x, Pmax, Kp) :
+			(1 .+ Ki .* incentive) .* (perf(x, Pmax, Kp) .>= criterion_perf)
 
 		# Subtractive cost discounting to allow for negative EV
 		return exp_reward .- Kc .* exp_cost
@@ -135,6 +137,8 @@ Kc $(@bind p1Kc Scrubbable(0.01:0.05:4.0; default=2.0))
 
 incentive $(@bind p1incentive Scrubbable(1:10; default=5))
 
+Criterion performance for binary condition $(@bind p1criterion Scrubbable(0.:0.05:1.0; default=0.6))
+
 Looking at the following range on the x axis: 0 to $(@bind p1xhigh Scrubbable(0.01:0.05:1.0; default=0.5))
 
 Using these parameters the linear portion of the effort-performance sigmoid lies roughly around 0.5 performance. Note that the function is still not very linear. When you are closer to linearity (lower Kp), the orderly relationship between Pmax and optimal x is ruined.
@@ -147,7 +151,7 @@ begin
 		x = 0:0.01:p1xhigh
 		
 		# Pmax multiplies the performance function
-		Pmaxs = range(0.9, 1.10, length=5)
+		Pmaxs = range(0.9, 1.10, length=3)
 		
 		# Initialize figure
 		f_Pmax = Figure()
@@ -155,19 +159,29 @@ begin
 		# Plot perf(x) as function of Kp
 		perfs = [perf(x, Pmax, p1Kp) for Pmax in Pmaxs]
 		
-		ax_perf = plot_func_of_x!(f_Pmax[1,1], x, perfs, Pmaxs;
+		ax_perf = plot_func_of_x!(f_Pmax[1,1:2], x, perfs, Pmaxs;
 			xlabel = "Cognitive resource - x",
 			ylabel = "Performance (prop.)")
 
 		hlines!(ax_perf, 1., color = :grey, linestyle = :dash)
 
 		# Plot EV(x) as function of Kp
-		EVs = [EV(x, p1incentive, p1Kc, p1Ki , p1Kp; Pmax = Pmax) for Pmax in Pmaxs]
+		EVs_prop = [EV(x, p1incentive, p1Kc, p1Ki , p1Kp; Pmax = Pmax) 
+			for Pmax in Pmaxs]
+		EVs_bin = [EV(x, p1incentive, p1Kc, p1Ki , p1Kp; Pmax = Pmax,
+			condition = "binary", criterion_perf = p1criterion) 
+			for Pmax in Pmaxs]
 
-		ax_EV = plot_func_of_x!(f_Pmax[1,2], x, EVs, Pmaxs;
+		ax_EV_prop = plot_func_of_x!(f_Pmax[2,1], x, EVs_prop, Pmaxs;
 			xlabel = "Cognitive resource - x",
-			ylabel = "Expected value (\$)",
+			ylabel = "Expected value (\$)\nproportional condition",
 			mark_max = true)
+
+		ax_EV_bin = plot_func_of_x!(f_Pmax[2,2], x, EVs_bin, Pmaxs;
+			xlabel = "Cognitive resource - x",
+			ylabel = "Expected value (\$)\nbinary condition",
+			mark_max = true)
+
 		
 		f_Pmax
 	end
