@@ -44,12 +44,8 @@ begin
 		return exp_reward .- Kc .* exp_cost
 	end
 
-	# Derivative of EV when Pmax = 1
-	deriv_EV(x, incentive, Kc, Ki, Kp) = ((1 .+ Ki .* incentive) .* Kp)./(Kp .+ x)^2 	.-2 .* Kc .* x
-
 	# Return optimal x
-	optim_x(x, incentive, Kc, Ki, Kp) = find_zero(x -> 
-		deriv_EV(x, incentive, Kc, Ki, Kp), (0.,1.))
+	optim_x(x, incentive, Kc, Ki, Kp, Pmax) = findmax(EV(x, incentive, Kc , Ki , Kp; 	Pmax = Pmax))[2]
 end
 
 # ╔═╡ d778ab26-d6ac-4766-b67f-aa7496ce23f9
@@ -131,17 +127,17 @@ end
 md"## Effect of Pmax on perf(x) and EV(x)
 #### Using the following parameter values:
 
-Kp $(@bind p1Kp Scrubbable(0.01:0.05:4.0; default=0.05))
+Kp $(@bind p1Kp Scrubbable(0.01:0.05:4.0; default=0.2))
 
 Ki $(@bind p1Ki Scrubbable(0.01:0.05:2.0; default=0.5))
 
-Kc $(@bind p1Kc Scrubbable(0.01:0.05:2.0; default=0.5))
+Kc $(@bind p1Kc Scrubbable(0.01:0.05:4.0; default=2.0))
 
 incentive $(@bind p1incentive Scrubbable(1:10; default=5))
 
-Looking at the following range on the x axis: 0 to $(@bind p1xhigh Scrubbable(0.01:0.05:1.0; default=0.2))
+Looking at the following range on the x axis: 0 to $(@bind p1xhigh Scrubbable(0.01:0.05:1.0; default=0.5))
 
-Using these parameters the linear portion of the effort-performance sigmoid lies roughly around 0.5 performance.
+Using these parameters the linear portion of the effort-performance sigmoid lies roughly around 0.5 performance. Note that the function is still not very linear. When you are closer to linearity (lower Kp), the orderly relationship between Pmax and optimal x is ruined.
 "
 
 # ╔═╡ a4c5300d-93b8-47f5-a84a-fcb086f2d91c
@@ -151,7 +147,7 @@ begin
 		x = 0:0.01:p1xhigh
 		
 		# Pmax multiplies the performance function
-		Pmaxs = range(0.85, 1.15, length=5)
+		Pmaxs = range(0.9, 1.10, length=5)
 		
 		# Initialize figure
 		f_Pmax = Figure()
@@ -177,79 +173,22 @@ begin
 	end
 end
 
-# ╔═╡ ea43e593-6fa4-41c6-ae5f-87ad54a3032a
-md"## Validating derivative method for finding optimal effort
-We're going to find the maximum using a numerical algorithm on the analytical derivative of EV. Let's make sure it works, by plotting EV, the analytical derivative, and seeing that the maximum we find by grid method aligns with the maximum we find with the derivative.
-As can be seen below, both methods of finding the optimal x converge, so we can use the derivative (haven't actually checked which is faster).
-
-### Using these parameters:
-Ki $(@bind dKi Scrubbable(0.01:0.05:2.0; default=0.5))
-
-Kc $(@bind dKc Scrubbable(0.01:0.05:2.0; default=0.5))
-
-Kp $(@bind dKp Scrubbable(0.01:0.05:2.0; default=0.5))
-
-incentive $(@bind dincentive Scrubbable(1:10; default=5))
-"
-
-# ╔═╡ 98282c0d-7807-4e9e-9988-524a0e60ff4f
-# Check derivative function
-begin
-	let EVx, EVx_tag, x = 0.:0.001:1.
-		this_deriv = x-> deriv_EV(x, dincentive, dKc, dKi, dKp)
-		
-		EVx = EV(x, dincentive, dKc, dKi, dKp; Pmax = 1.)
-		EVx_tag = [this_deriv(xi) for xi in x]
-
-		f_deriv = Figure()
-
-		ax_deriv = Axis(f_deriv[1,1])
-
-		# Mark y=0
-		hlines!(ax_deriv, 0, color=:grey, linestyle=:dash)
-
-		# Plot EV
-		lines!(ax_deriv, x, EVx)
-
-		# Find max of EV - grid method
-		maxy, maxx = findmax(EVx)
-		stem!(ax_deriv, x[maxx], maxy, marker=:x)
-
-		# Plot derivative
-		lines!(ax_deriv, x, EVx_tag)
-
-		# Find derivative of zero using numerical approx.
-		zerox = optim_x(x, dincentive, dKc, dKi, dKp)
-		zeroy = this_deriv(zerox)
-		scatter!(ax_deriv, zerox, zeroy, marker=:x, color=:orange)
-
-		# Label functions
-		text!(ax_deriv, x[end], EVx[end]; 
-			text = "EV(x)",
-			align = (:center, :top))
-		text!(ax_deriv, x[end], EVx_tag[end]; 
-			text = "EV'(x)",
-			align = (:center, :top))
-
-		f_deriv
-	end
-end
-
 # ╔═╡ e7d26c80-31c5-4bd9-8663-b5188853593f
-md"## Performance as a function of a bias in belief about Kp
+md"## Performance as a function of a bias in belief about performance, i.e. Pmax
 #### Using the following parameter values:
 
 Ki $(@bind p2Ki Scrubbable(0.01:0.05:2.0; default=0.5))
 
-Kc $(@bind p2Kc Scrubbable(0.01:0.05:2.0; default=0.5))
+Kc $(@bind p2Kc Scrubbable(0.01:0.05:2.0; default=2.0))
+
+Kp $(@bind p2Kp Scrubbable(0.01:0.05:4.0; default=0.2))
 
 incentive $(@bind p2incentive Scrubbable(1:10; default=5))
 
-negative bias $(@bind nbias NumberField(0.0:0.01:1.0; default=0.5))
-positive bias $(@bind pbias NumberField(1.0:0.01:10.0; default=1.5))
+negative bias $(@bind nbias NumberField(0.0:0.01:1.0; default=0.9))
+positive bias $(@bind pbias NumberField(1.0:0.01:10.0; default=1.1))
 
-Pmax is set at 1.0 - maximal performance of participant.
-"
+="
 
 # ╔═╡ 21650da0-79fa-47ce-8fe6-1fea26f043ce
 begin
@@ -2008,8 +1947,6 @@ version = "3.5.0+0"
 # ╠═26319531-19f6-4b29-b452-04208145f5af
 # ╠═dd84c870-69fd-4f50-962d-3edc698e0146
 # ╠═a4c5300d-93b8-47f5-a84a-fcb086f2d91c
-# ╠═ea43e593-6fa4-41c6-ae5f-87ad54a3032a
-# ╠═98282c0d-7807-4e9e-9988-524a0e60ff4f
 # ╠═e7d26c80-31c5-4bd9-8663-b5188853593f
 # ╠═21650da0-79fa-47ce-8fe6-1fea26f043ce
 # ╟─00000000-0000-0000-0000-000000000001
