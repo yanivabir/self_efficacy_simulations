@@ -45,7 +45,7 @@ begin
 	end
 
 	# Return optimal x
-	optim_x(x, incentive, Kc, Ki, Kp, Pmax) = findmax(EV(x, incentive, Kc , Ki , Kp; 	Pmax = Pmax))[2]
+	optim_x(x, incentive, Kc, Ki, Kp, Pmax) = x[findmax(EV(x, incentive, Kc , Ki , Kp; 	Pmax = Pmax))[2]]
 end
 
 # ╔═╡ d778ab26-d6ac-4766-b67f-aa7496ce23f9
@@ -94,7 +94,7 @@ end
 # Common parameters
 begin
 	# Arbitrarity set range of x to 0-1, but we treat it merely as a non-negative quantity
-	x = 0:0.01:1
+	x = 0:0.0001:1
 end
 
 # ╔═╡ c0c1c52a-1fb4-4749-ae5e-850dba4a649c
@@ -102,17 +102,17 @@ end
 begin
 	function trial(incentive, 
 		Kc, 
-		Ki, 
-		true_Kp,
-		belief_Kp; 
+		Ki,
+		Kp,
+		belief_Pmax; 
 		condition = "prop",
-		Pmax = 1.0)
+		true_Pmax = 1.0)
 
 		# Agent invests effort according to belief
-		effort = optim_x(x, incentive, Kc, Ki, belief_Kp)
+		effort = optim_x(x, incentive, Kc, Ki, Kp, belief_Pmax)
 
 		# Actual performance
-		actual_perf = perf(effort, Pmax, true_Kp)
+		actual_perf = perf(effort, true_Pmax, Kp)
 
 		# Reward, based on condition
 		reward = condition == "prop" ? actual_perf .* incentive : ((rand() < actual_perf) + 0.) .* incentive
@@ -177,31 +177,30 @@ end
 md"## Performance as a function of a bias in belief about performance, i.e. Pmax
 #### Using the following parameter values:
 
+Kp $(@bind p2Kp Scrubbable(0.01:0.05:4.0; default=0.2))
+
 Ki $(@bind p2Ki Scrubbable(0.01:0.05:2.0; default=0.5))
 
-Kc $(@bind p2Kc Scrubbable(0.01:0.05:2.0; default=2.0))
-
-Kp $(@bind p2Kp Scrubbable(0.01:0.05:4.0; default=0.2))
+Kc $(@bind p2Kc Scrubbable(0.01:0.05:4.0; default=2.0))
 
 incentive $(@bind p2incentive Scrubbable(1:10; default=5))
 
-negative bias $(@bind nbias NumberField(0.0:0.01:1.0; default=0.9))
-positive bias $(@bind pbias NumberField(1.0:0.01:10.0; default=1.1))
-
-="
+maximum negative bias $(@bind nbias NumberField(0.0:0.01:1.0; default=0.8))
+maximum positive bias $(@bind pbias NumberField(1.0:0.01:10.0; default=1.2))
+"
 
 # ╔═╡ 21650da0-79fa-47ce-8fe6-1fea26f043ce
 begin
 
-	let Kps = 0.1:0.05:2.
+	let Kps = 0.01:0.01:2.
 
-		biases = [nbias, 1.0, pbias]
+		biases = [nbias, 1.0 - ((1.0 - nbias) / 2), 1.0, 1.0 + ((pbias - 1.0) / 2), pbias]
 
 		trials = [[trial(p2incentive, 
 				p2Kc, 
 				p2Ki, 
-				true_Kp, 
-				bias * true_Kp) for true_Kp in Kps] for bias in biases]
+				Kp, 
+				bias) for Kp in Kps] for bias in biases]
 
 		effort = [[t["effort"] for t in b] for b in trials]
 		actual_perf = [[t["actual_perf"] for t in b] for b in trials]
@@ -219,7 +218,7 @@ begin
 		# Plot effort
 		plot_func_of_x!(f_bias[2,1], Kps, effort, (biases .- 1) .* 100;
 			printf = "%+d%%",
-			xlabel = "True Kp",
+			xlabel = "Kp",
 			ylabel = "Effort invested",
 			label = false,
 			linewidth = 2
@@ -231,7 +230,7 @@ begin
 		ax_effort_diff = plot_func_of_x!(f_bias[2,2], 
 			Kps, effort_diff, (biases .- 1) .* 100;
 			printf = "%+d%%",
-			xlabel = "True Kp",
+			xlabel = "Kp",
 			ylabel = "Effort relative\nto no bias",
 			label = false,
 			linewidth = 2
@@ -243,7 +242,7 @@ begin
 		ax_actual = plot_func_of_x!(f_bias[3,1], 
 			Kps, actual_perf, (biases .- 1) .* 100;
 			printf = "%+d%%",
-			xlabel = "True Kp",
+			xlabel = "Kp",
 			ylabel = "Performance (prop.)",
 			label = false,
 			linewidth = 2
@@ -255,7 +254,7 @@ begin
 		ax_actual_diff = plot_func_of_x!(f_bias[3,2], 
 			Kps, actual_perf_diff, (biases .- 1) .* 100;
 			printf = "%+d%%",
-			xlabel = "True Kp",
+			xlabel = "Kp",
 			ylabel = "Perf. relative\nto no bias",
 			label = false,
 			linewidth = 2
@@ -267,7 +266,7 @@ begin
 		ax_value = plot_func_of_x!(f_bias[4,1], 
 			Kps, value, (biases .- 1) .* 100;
 			printf = "%+d%%",
-			xlabel = "True Kp",
+			xlabel = "Kp",
 			ylabel = "Internal value",
 			label = false,
 			linewidth = 2
@@ -279,7 +278,7 @@ begin
 		ax_value_diff = plot_func_of_x!(f_bias[4,2], 
 			Kps, value_diff, (biases .- 1) .* 100;
 			printf = "%+d%%",
-			xlabel = "True Kp",
+			xlabel = "Kp",
 			ylabel = "Value relative to\nno bias",
 			label = false,
 			linewidth = 2
@@ -288,7 +287,7 @@ begin
 		hlines!(ax_value_diff, [0.], linestyle = :dash, color = :grey)
 
 		# Plot legend
-		f_bias[1, 1:2] = Legend(f_bias, ax_actual, "Bias in Kp", framevisible = false,
+		f_bias[1, 1:2] = Legend(f_bias, ax_actual, "Bias in Pmax", framevisible = false,
 			orientation = :horizontal)
 		
 		f_bias
