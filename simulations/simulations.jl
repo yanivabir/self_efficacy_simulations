@@ -31,7 +31,7 @@ begin
 	# Performance function - depends on cognitive resource comitted, and two free parameters
 	perf(x, Pmax, Kp) = Pmax .* x ./ (Kp .+ x)
 	
-	function EV(x, incentive, Kc , Ki , Kp; Pmax = 1.0, condition = "prop", 			criterion_perf = 0.75)
+	function EV(x, incentive, Kc , Ki , Kp; Pmax = 1.0, condition = "prop", 			criterion_perf = 0.6)
 		# This function returns expected value for a given effort, incentive and parameters.
 
 		# Cost is quadratic, comes from motor control theory
@@ -47,7 +47,10 @@ begin
 	end
 
 	# Return optimal x
-	optim_x(x, incentive, Kc, Ki, Kp, Pmax) = x[findmax(EV(x, incentive, Kc , Ki , Kp; 	Pmax = Pmax))[2]]
+	optim_x(x, incentive, Kc, Ki, Kp, Pmax; 
+		condition = "prop", criterion_perf = 0.6) = 
+		x[findmax(EV(x, incentive, Kc, Ki, Kp; Pmax = Pmax,
+			condition = condition, criterion_perf = criterion_perf))[2]]
 end
 
 # ╔═╡ d778ab26-d6ac-4766-b67f-aa7496ce23f9
@@ -60,20 +63,33 @@ function plot_func_of_x!(f, x, ys, parameter;
 	y_offset = (0., 0.),
 	mark_max = false,
 	label = true,
-	linewidth = 1.5
+	linewidth = 1.5,
+	linestyle = :solid,
+	title = "",
+	colors = nothing
 )
 
 	# Define axis
 	ax = Axis(f[1,1], 
 		xlabel = xlabel,
-		ylabel = ylabel)
+		ylabel = ylabel,
+		title = title)
 
 	# Plot data
 	for (i, y) in enumerate(ys)
 		# Plot function
-		lines!(ax, x, y, 
-			label = Printf.format(Printf.Format(printf), parameter[i]),
-			linewidth = linewidth)
+		if isnothing(colors)
+			lines!(ax, x, y, 
+				label = Printf.format(Printf.Format(printf), parameter[i]),
+				linewidth = linewidth,
+				linestyle = linestyle)
+		else
+			lines!(ax, x, y, 
+				label = Printf.format(Printf.Format(printf), parameter[i]),
+				linewidth = linewidth,
+				linestyle = linestyle,
+				color = colors[i])
+		end
 
 		# Plot argmax of x
 		if mark_max
@@ -108,16 +124,19 @@ begin
 		Kp,
 		belief_Pmax; 
 		condition = "prop",
+		criterion_perf = 0.6,
 		true_Pmax = 1.0)
 
 		# Agent invests effort according to belief
-		effort = optim_x(x, incentive, Kc, Ki, Kp, belief_Pmax)
+		effort = optim_x(x, incentive, Kc, Ki, Kp, belief_Pmax; 
+			condition = condition, criterion_perf = criterion_perf)
 
 		# Actual performance
 		actual_perf = perf(effort, true_Pmax, Kp)
 
 		# Reward, based on condition
-		reward = condition == "prop" ? actual_perf .* incentive : ((rand() < actual_perf) + 0.) .* incentive
+		reward = condition == "prop" ? actual_perf .* incentive : 
+			(actual_perf >= criterion_perf) .* incentive
 
 		return Dict("effort" => effort, 
 			"actual_perf" => actual_perf,
@@ -175,13 +194,17 @@ begin
 		ax_EV_prop = plot_func_of_x!(f_Pmax[2,1], x, EVs_prop, Pmaxs;
 			xlabel = "Cognitive resource - x",
 			ylabel = "Expected value (\$)\nproportional condition",
+			title = "Proportional condition",
 			mark_max = true)
 
 		ax_EV_bin = plot_func_of_x!(f_Pmax[2,2], x, EVs_bin, Pmaxs;
 			xlabel = "Cognitive resource - x",
-			ylabel = "Expected value (\$)\nbinary condition",
-			mark_max = true)
+			ylabel = "Expected value (\$)",
+			title = "Binary condition",
+			mark_max = true,
+			linestyle = :dash)
 
+		linkyaxes!(ax_EV_prop, ax_EV_bin)
 		
 		f_Pmax
 	end
@@ -199,6 +222,8 @@ Kc $(@bind p2Kc Scrubbable(0.01:0.05:4.0; default=2.0))
 
 incentive $(@bind p2incentive Scrubbable(1:10; default=5))
 
+Criterion performance for binary condition $(@bind p2criterion Scrubbable(0.:0.05:1.0; default=0.6))
+
 maximum negative bias $(@bind nbias NumberField(0.0:0.01:1.0; default=0.8))
 maximum positive bias $(@bind pbias NumberField(1.0:0.01:10.0; default=1.2))
 "
@@ -208,18 +233,19 @@ begin
 
 	let Kps = 0.01:0.01:2.
 
-		biases = [nbias, 1.0 - ((1.0 - nbias) / 2), 1.0, 1.0 + ((pbias - 1.0) / 2), pbias]
+		biases = [nbias, 1.0, pbias]
 
-		trials = [[trial(p2incentive, 
+		trials = [[[trial(p2incentive, 
 				p2Kc, 
 				p2Ki, 
 				Kp, 
-				bias) for Kp in Kps] for bias in biases]
+				bias;
+				condition = cond,
+				criterion_perf = p2criterion) for Kp in Kps] for bias in biases] 
+					for cond in ["prop", "binary"]]
 
-		effort = [[t["effort"] for t in b] for b in trials]
-		actual_perf = [[t["actual_perf"] for t in b] for b in trials]
-		rewards = [[t["reward"] for t in b] for b in trials]
-		value = [actual_perf[i] .- p2Kc .* effort[i] .^2 for i in 1:length(effort)]
+		effort = [[[t["effort"] for t in b] for b in c] for c in trials]
+		actual_perf = [[[t["actual_perf"] for t in b] for b in c] for c in trials]
 
 		function get_diff(x)
 			diff = [t .- x[Int(median(1:length(x)))] for t in x]
@@ -230,31 +256,28 @@ begin
 		f_bias = Figure()
 
 		# Plot effort
-		plot_func_of_x!(f_bias[2,1], Kps, effort, (biases .- 1) .* 100;
+		plot_func_of_x!(f_bias[2,1], Kps, effort[1], (biases .- 1.) .* 100;
 			printf = "%+d%%",
 			xlabel = "Kp",
 			ylabel = "Effort invested",
 			label = false,
-			linewidth = 2
+			linewidth = 2,
+			title = "Proportional condition"
 		)
 
-		# Plot effort difference
-		effort_diff = get_diff(effort)
-		
-		ax_effort_diff = plot_func_of_x!(f_bias[2,2], 
-			Kps, effort_diff, (biases .- 1) .* 100;
+		plot_func_of_x!(f_bias[2,2], Kps, effort[2], (biases .- 1) .* 100;
 			printf = "%+d%%",
 			xlabel = "Kp",
-			ylabel = "Effort relative\nto no bias",
+			ylabel = "Effort invested",
 			label = false,
-			linewidth = 2
+			linewidth = 2,
+			linestyle = :dash,
+			title = "Binary condition"
 		)
-
-		hlines!(ax_effort_diff, [0.], linestyle = :dash, color = :grey)
 	
 		# Plot actual performance
 		ax_actual = plot_func_of_x!(f_bias[3,1], 
-			Kps, actual_perf, (biases .- 1) .* 100;
+			Kps, actual_perf[1], (biases .- 1) .* 100;
 			printf = "%+d%%",
 			xlabel = "Kp",
 			ylabel = "Performance (prop.)",
@@ -262,43 +285,16 @@ begin
 			linewidth = 2
 		)
 
-		# Plot performance difference
-		actual_perf_diff = get_diff(actual_perf)
-		
-		ax_actual_diff = plot_func_of_x!(f_bias[3,2], 
-			Kps, actual_perf_diff, (biases .- 1) .* 100;
+		plot_func_of_x!(f_bias[3,2], 
+			Kps, actual_perf[2], (biases .- 1) .* 100;
 			printf = "%+d%%",
 			xlabel = "Kp",
-			ylabel = "Perf. relative\nto no bias",
+			ylabel = "Performance (prop.)",
 			label = false,
-			linewidth = 2
+			linewidth = 2,
+			linestyle = :dash
 		)
 
-		hlines!(ax_actual_diff, [0.], linestyle = :dash, color = :grey)
-
-		# Plot value
-		ax_value = plot_func_of_x!(f_bias[4,1], 
-			Kps, value, (biases .- 1) .* 100;
-			printf = "%+d%%",
-			xlabel = "Kp",
-			ylabel = "Internal value",
-			label = false,
-			linewidth = 2
-		)
-
-		# Plot value difference
-		value_diff = get_diff(value)
-
-		ax_value_diff = plot_func_of_x!(f_bias[4,2], 
-			Kps, value_diff, (biases .- 1) .* 100;
-			printf = "%+d%%",
-			xlabel = "Kp",
-			ylabel = "Value relative to\nno bias",
-			label = false,
-			linewidth = 2
-		)
-
-		hlines!(ax_value_diff, [0.], linestyle = :dash, color = :grey)
 
 		# Plot legend
 		f_bias[1, 1:2] = Legend(f_bias, ax_actual, "Bias in Pmax", framevisible = false,
@@ -309,6 +305,98 @@ begin
  
 	end
 
+end
+
+# ╔═╡ 73ca64e8-0218-4b5b-a03e-38c03d672fb5
+md"# Plot for proposal
+
+#### Using the following parameter values:
+
+Kp $(@bind p3Kp Scrubbable(0.01:0.05:4.0; default=0.2))
+
+Ki $(@bind p3Ki Scrubbable(0.01:0.05:2.0; default=0.5))
+
+Kc $(@bind p3Kc Scrubbable(0.01:0.05:4.0; default=2.0))
+
+incentive $(@bind p3incentive Scrubbable(1:10; default=5))
+
+Criterion performance for binary condition $(@bind p3criterion Scrubbable(0.:0.05:1.0; default=0.6))
+
+maximum negative bias $(@bind p3nbias NumberField(0.0:0.01:1.0; default=0.8))
+maximum positive bias $(@bind p3pbias NumberField(1.0:0.01:10.0; default=1.2))
+"
+
+# ╔═╡ 78bd4501-e249-43aa-9972-604a941c72d3
+let
+	# Initialize figure
+	f_propos = Figure(resolution = (16., 10.43) .* 72 ./ 1.3)
+
+	Pmaxs = [p3nbias, 1.0, p3pbias]
+	conds = ["prop", "binary"]
+	colors = [:blue, :purple, :red]
+
+	# Plot perf(x) as function of Kp
+	perfs = [perf(0:0.01:0.6, Pmax, p2Kp) for Pmax in Pmaxs]
+	
+	ax_perf = plot_func_of_x!(f_propos[2,1:2], 0:0.01:0.6, perfs, 
+		(Pmaxs .- 1.0) .* 100;
+		xlabel = "Cognitive resource - x",
+		ylabel = "Performance (prop.)",
+		label = false,
+		colors = colors,
+		linewidth = 2,
+		printf = "%+d%%")
+	ax_perf.xautolimitmargin = (0.0, 0.0)
+	ax_perf.yautolimitmargin = (0.0, 0.0)
+
+	# Plot effort by condition
+	trials = [[trial(p3incentive, 
+				p3Kc, 
+				p3Ki, 
+				p3Kp, 
+				bias;
+				condition = cond,
+				criterion_perf = p3criterion) for bias in Pmaxs] 
+					for cond in conds]
+
+	effort = [t["effort"] for c in trials for t in c]
+	actual_perf = [t["actual_perf"] for c in trials for t in c]
+	condition = vcat([repeat([c], length(Pmaxs)) for c in conds]...)
+
+	# Plot effort
+	ax_effort = Axis(f_propos[3,1], 
+		xlabel = "",
+		ylabel = "Effort invested",
+		xticks = (1:2, ["Proportional\ncondition",
+			"Binary\ncondition"]))
+	
+ 	barplot!(ax_effort, 
+		(condition .== "binary") .+ 1,
+		effort,
+		dodge = repeat(1:3, 2),
+	 	color = repeat(colors, 2))
+	
+	# Plot performance
+	ax_actual = Axis(f_propos[3,2], 
+		xlabel = "",
+		ylabel = "Performance achieved",
+		xticks = (1:2, ["Proportional\ncondition",
+			"Binary\ncondition"]))
+	
+	 barplot!(ax_actual, 
+		(condition .== "binary") .+ 1,
+		actual_perf,
+		dodge = repeat(1:3, 2),
+	 	color = repeat(colors, 2))
+
+	# Plot legend
+	f_propos[1, 1:2] = Legend(f_propos, ax_perf, "Bias in Pmax", 
+		framevisible = 	false,
+		orientation = :horizontal)
+
+	save("./results/proposal_plot.pdf", f_propos, pt_per_unit = 1)
+
+	f_propos
 end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -1962,5 +2050,7 @@ version = "3.5.0+0"
 # ╠═a4c5300d-93b8-47f5-a84a-fcb086f2d91c
 # ╠═e7d26c80-31c5-4bd9-8663-b5188853593f
 # ╠═21650da0-79fa-47ce-8fe6-1fea26f043ce
+# ╠═73ca64e8-0218-4b5b-a03e-38c03d672fb5
+# ╠═78bd4501-e249-43aa-9972-604a941c72d3
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
